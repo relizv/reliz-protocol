@@ -27,11 +27,23 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
+
+# Gradle build output (флатнутый Flutter-generated .gitignore не покрывает
+# `android/build/` — ниже добавляем явно, чтобы apk/aab/aar и intermediates
+# не утекали в репозиторий).
+android/build/
+android/app/build/
+
+# Артефакты cargo-ndk: нативная библиотека `libghost_flutter_bridge.so`
+# собирается отдельным шагом и кладётся в jniLibs/<abi>/, не пушим её
+# как часть исходников.
+android/app/src/main/jniLibs/
 
 # Symbolication related
 app.*.symbols

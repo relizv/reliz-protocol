@@ -14,3 +14,6 @@ ghost-common = { path = "../../ghost-common" }
 # (ребрендинг Ghost → Reliz). Алиас даёт стабильное имя для FRB-моста,
 # не ломая остальной workspace.
 reliz_client = { package = "ghost-client", path = "../../ghost-client" }
+# Runtime crate, парный к `flutter_rust_bridge_codegen` 2.12.x.
+# Версия должна совпадать с CLI, которым сгенерирован `frb_generated.rs`.
+flutter_rust_bridge = "=2.12.0"
