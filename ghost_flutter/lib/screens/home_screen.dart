@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+
+import '../models/proxy_state.dart';
 import '../services/proxy_service.dart';
 import '../services/theme.dart';
-import '../models/proxy_state.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final ProxyService _service = ProxyService();
 
-  final _serverController = TextEditingController(text: 'ghost.example.com:443');
+  final _serverController = TextEditingController(text: 'reliz.example.com:443');
   final _userIdController = TextEditingController(text: '00000000000000000000000000000001');
   final _maskDomainController = TextEditingController(text: 'www.apple.com');
 
@@ -21,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _enableFragmentation = false;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+
+  /// Обработчик deep-ссылок (холодный старт + runtime).
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
 
   @override
   void initState() {
@@ -33,13 +41,82 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _pulseAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    _initDeepLinks();
   }
 
   @override
   void dispose() {
+    _linkSub?.cancel();
     _pulseController.dispose();
     _service.dispose();
     super.dispose();
+  }
+
+  /// Регистрируем приём deep-ссылок `relizproxy://` и `ghostproxy://`:
+  /// - `initial` — приложение стартовало по ссылке (cold start);
+  /// - `uriLinkStream` — пользователь открыл ссылку, пока приложение работало.
+  Future<void> _initDeepLinks() async {
+    try {
+      final initial = await _appLinks.getInitialLink();
+      if (initial != null) {
+        _handleDeepLink(initial);
+      }
+    } catch (_) {
+      // Игнорируем сбои при холодном старте — stream-подписка всё равно отработает.
+    }
+    _linkSub = _appLinks.uriLinkStream.listen(
+      _handleDeepLink,
+      onError: (_) {},
+    );
+  }
+
+  /// Разбираем URI вида `relizproxy://connect?key=...&server=...&mask=...`
+  /// (схема `ghostproxy://` поддерживается для обратной совместимости).
+  /// Поддерживаются как query-string, так и fragment-style параметры.
+  void _handleDeepLink(Uri uri) {
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'relizproxy' && scheme != 'ghostproxy') {
+      return;
+    }
+
+    final params = <String, String>{};
+    params.addAll(uri.queryParameters);
+    if (uri.fragment.isNotEmpty) {
+      // Поддерживаем `relizproxy://#key=...&server=...&mask=...`.
+      params.addAll(Uri.splitQueryString(uri.fragment));
+    }
+
+    final key = params['key'] ?? params['user'] ?? params['user_id'];
+    final server = params['server'] ?? params['addr'] ?? params['host'];
+    final mask = params['mask'] ?? params['sni'] ?? params['mask_domain'];
+
+    if (key == null && server == null && mask == null) {
+      return;
+    }
+
+    setState(() {
+      if (key != null && key.isNotEmpty) _userIdController.text = key;
+      if (server != null && server.isNotEmpty) _serverController.text = server;
+      if (mask != null && mask.isNotEmpty) _maskDomainController.text = mask;
+    });
+
+    // Автостарт подключения, если мы ещё не подключены.
+    final currentState = _service.state;
+    if (!currentState.isConnected &&
+        currentState.statusText != 'Connecting...') {
+      unawaited(_connectFromControllers());
+    }
+  }
+
+  Future<void> _connectFromControllers() async {
+    await _service.connect(
+      serverAddr: _serverController.text,
+      userId: _userIdController.text,
+      enablePadding: _enablePadding,
+      enableFragmentation: _enableFragmentation,
+      maskDomain: _maskDomainController.text,
+    );
   }
 
   @override
@@ -87,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         const SizedBox(height: 12),
         Text(
-          'GHOST PROXY',
+          'RELIZ PROTOCOL',
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 letterSpacing: 4,
@@ -306,8 +383,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               controller: _serverController,
               enabled: !state.isConnected,
               decoration: const InputDecoration(
-                labelText: 'Ghost Server',
-                hintText: 'ghost.example.com:443',
+                labelText: 'Reliz Server',
+                hintText: 'reliz.example.com:443',
                 prefixIcon: Icon(Icons.dns),
               ),
             ),
@@ -398,13 +475,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (state.isConnected) {
       await _service.disconnect();
     } else {
-      await _service.connect(
-        serverAddr: _serverController.text,
-        userId: _userIdController.text,
-        enablePadding: _enablePadding,
-        enableFragmentation: _enableFragmentation,
-        maskDomain: _maskDomainController.text,
-      );
+      await _connectFromControllers();
     }
   }
 
