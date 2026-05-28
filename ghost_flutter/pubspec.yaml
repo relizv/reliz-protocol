@@ -1,5 +1,5 @@
-name: ghost_proxy
-description: Ghost Proxy - Stealth VPN Client
+name: reliz_protocol
+description: Reliz Protocol - Stealth VPN Client
 publish_to: 'none'
 version: 0.1.0
 
@@ -16,6 +16,9 @@ dependencies:
       ref: main
   provider: ^6.0.0
   shared_preferences: ^2.0.0
+  # Обработка deep links вида relizproxy:// и ghostproxy:// для
+  # автозаполнения полей подключения и автоматического коннекта.
+  app_links: ^6.3.0
 
 dev_dependencies:
   flutter_test:

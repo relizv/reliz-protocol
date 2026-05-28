@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class GhostTheme {
-  GhostTheme._();
+class RelizTheme {
+  RelizTheme._();
 
   static ThemeData get darkTheme {
     return ThemeData(
