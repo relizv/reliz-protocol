@@ -1,0 +1,18 @@
+[package]
+name = "ghost-client"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ghost-client"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+ghost-common = { path = "../ghost-common" }
+ghost-crypto = { path = "../ghost-crypto" }
