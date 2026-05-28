@@ -5,13 +5,13 @@ members = [
     "ghost-common",
     "ghost-crypto",
     "ghost-reality",
-    "ghost_flutter/rust",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 
 # Cryptography
 chacha20poly1305 = "0.10"
@@ -30,6 +30,12 @@ thiserror = "1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# Web UI
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
 
 # TLS / Reality
 rustls = "0.23"

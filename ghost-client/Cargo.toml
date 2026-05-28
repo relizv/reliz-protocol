@@ -9,10 +9,16 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 bytes = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
 ghost-common = { path = "../ghost-common" }
 ghost-crypto = { path = "../ghost-crypto" }
+

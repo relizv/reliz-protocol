@@ -6,6 +6,7 @@
 //! - Шаг 3: Парсинг целевого адреса
 
 pub mod tunnel;
+pub mod web;
 
 use anyhow::Result;
 use ghost_common::ClientConfig;
@@ -15,14 +16,6 @@ use tracing::{info, warn};
 
 /// Запустить клиент Ghost: слушать SOCKS5 и проксировать через сервер.
 pub async fn run(config: ClientConfig) -> Result<()> {
-    // Инициализация логирования
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "ghost_client=info".into()),
-        )
-        .init();
-
     info!("🚀 Ghost Client starting...");
     info!("   SOCKS5 listen : {}", config.socks5_listen);
     info!("   Ghost server  : {}", config.server_addr);
@@ -35,6 +28,7 @@ pub async fn run(config: ClientConfig) -> Result<()> {
     // Шаг 1: TcpListener
     let listener = TcpListener::bind(&config.socks5_listen).await?;
     info!("✅ SOCKS5 proxy listening on {}", config.socks5_listen);
+
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;

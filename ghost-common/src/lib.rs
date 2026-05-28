@@ -12,6 +12,7 @@
 //! AddrType = 0x04 → IPv6 (16 байт + 2 байта порт)
 
 pub mod stealth;
+pub mod token;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};

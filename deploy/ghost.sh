@@ -504,7 +504,7 @@ do_key() {
         return 1
     fi
 
-    # Получаем данные сервера для Deep Link
+    # Получаем данные сервера
     local server_ip
     server_ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "YOUR_SERVER_IP")
     local server_port
@@ -514,8 +514,24 @@ do_key() {
     local auth_key
     auth_key=$(config_get reality_auth_key)
 
-    # Формируем Deep Link
-    local deep_link="ghostproxy://auth?key=${uuid}&server=${server_ip}:${server_port}&mask=${mask_domain}&authkey=${auth_key}"
+    # Формируем base64-токен (rlz_...)
+    local token
+    token=$(python3 -c "
+import json, base64
+data = json.dumps({
+    's': '${server_ip}:${server_port}',
+    'k': '${uuid}',
+    'm': '${mask_domain}',
+    'a': '${auth_key}'
+}, separators=(',', ':'))
+b64 = base64.urlsafe_b64encode(data.encode()).decode().rstrip('=')
+print('rlz_' + b64)
+" 2>/dev/null)
+
+    if [[ -z "$token" ]]; then
+        log_err "Не удалось сгенерировать токен (нужен python3)"
+        return 1
+    fi
 
     # Добавляем UUID в конфиг
     add_user_to_config "$uuid"
@@ -530,11 +546,11 @@ do_key() {
     log_ok "Новый клиентский ключ создан!"
     separator
     echo ""
-    echo -e "  ${BOLD}UUID:${NC}        ${uuid}"
-    echo -e "  ${BOLD}Deep Link:${NC}   ${CYAN}${deep_link}${NC}"
+    echo -e "  ${BOLD}Token:${NC}"
     echo ""
-    echo -e "  ${DIM}Deep Link можно передать клиенту для автоматической"
-    echo -e "  настройки приложения Ghost Protocol (Flutter).${NC}"
+    echo -e "  ${CYAN}${token}${NC}"
+    echo ""
+    echo -e "  ${DIM}Скопируйте токен и вставьте в клиент Reliz Protocol.${NC}"
     echo ""
     separator
     echo ""
