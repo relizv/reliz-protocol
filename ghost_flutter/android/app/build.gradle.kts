@@ -8,7 +8,8 @@ plugins {
 android {
     namespace = "com.example.ghost_proxy"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // app_links / shared_preferences_android требуют NDK 27.x. Берём явно.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

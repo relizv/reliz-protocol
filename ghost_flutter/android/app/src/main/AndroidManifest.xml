@@ -24,6 +24,25 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!--
+                Deep-link схемы Reliz Protocol:
+                  relizproxy://<base64-key>
+                  ghostproxy://<base64-key>   (legacy-схема Ghost, оставлена ради
+                                               совместимости с уже распространёнными
+                                               клиентскими ссылками)
+                Android доставит такой URI в `getIntent().getData()` MainActivity,
+                откуда Flutter забирает его через плагин `app_links`.
+                autoVerify=false: схемы кастомные, не http(s), и не подлежат
+                App-Links-валидации через .well-known.
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="relizproxy"/>
+                <data android:scheme="ghostproxy"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
