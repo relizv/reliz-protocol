@@ -357,6 +357,10 @@ pub struct ClientConfig {
 
     /// Максимальный размер паддинга (0–255)
     pub max_padding_len: u8,
+
+    /// Домен для маскировки SNI (Reality), например `www.apple.com`.
+    /// Передаётся в TLS-обёртку клиента.
+    pub mask_domain: String,
 }
 
 impl Default for ClientConfig {
@@ -368,6 +372,7 @@ impl Default for ClientConfig {
             enable_padding: true,
             enable_fragmentation: false,
             max_padding_len: 64,
+            mask_domain: "www.apple.com".to_string(),
         }
     }
 }
