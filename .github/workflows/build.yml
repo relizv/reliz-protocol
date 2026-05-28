@@ -1,0 +1,150 @@
+name: Build Release Artifacts
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+            x86_64-linux-android
+            i686-linux-android
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Cache cargo-ndk
+        id: cache-cargo-ndk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: ${{ runner.os }}-cargo-ndk-v1
+
+      - name: Install cargo-ndk
+        if: steps.cache-cargo-ndk.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk
+
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+        working-directory: ghost_flutter
+
+      - name: Build Release APK
+        run: flutter build apk --release
+        working-directory: ghost_flutter
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reliz-protocol-apk
+          path: ghost_flutter/build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build ghost-client EXE
+        run: cargo build --release --bin ghost-client
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-client-windows
+          path: target/release/ghost-client.exe
+
+  build-linux:
+    name: Build Debian Packages (DEB)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build Workspace Binaries
+        run: cargo build --release --workspace
+
+      - name: Package ghost-client DEB
+        run: |
+          mkdir -p deb-client/DEBIAN
+          mkdir -p deb-client/usr/local/bin
+          cp target/release/ghost-client deb-client/usr/local/bin/
+          cat << 'EOF' > deb-client/DEBIAN/control
+          Package: ghost-client
+          Version: 0.1.0
+          Section: net
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Reliz Protocol Team <info@reliz.com>
+          Description: Reliz Protocol - Stealth VPN Client CLI
+          EOF
+          dpkg-deb --build deb-client ghost-client.deb
+
+      - name: Package ghost-server DEB
+        run: |
+          mkdir -p deb-server/DEBIAN
+          mkdir -p deb-server/usr/local/bin
+          mkdir -p deb-server/etc/systemd/system
+          mkdir -p deb-server/etc/ghost
+          cp target/release/ghost-server deb-server/usr/local/bin/
+          cp deploy/ghost.sh deb-server/usr/local/bin/ghost
+          chmod +x deb-server/usr/local/bin/ghost
+          cp deploy/ghost-server.service deb-server/etc/systemd/system/
+          cp deploy/ghost-server.conf deb-server/etc/ghost/
+          cat << 'EOF' > deb-server/DEBIAN/control
+          Package: ghost-server
+          Version: 0.1.0
+          Section: net
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Reliz Protocol Team <info@reliz.com>
+          Description: Reliz Protocol - Stealth VPN Server Daemon and Management CLI
+          EOF
+          dpkg-deb --build deb-server ghost-server.deb
+
+      - name: Upload Debian Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-debian-packages
+          path: |
+            ghost-client.deb
+            ghost-server.deb
