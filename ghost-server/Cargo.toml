@@ -1,0 +1,21 @@
+[package]
+name = "ghost-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ghost-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+toml = "0.8"
+ghost-common = { path = "../ghost-common" }
+ghost-crypto = { path = "../ghost-crypto" }
+ghost-reality = { path = "../ghost-reality" }

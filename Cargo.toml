@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "ghost-client",
+    "ghost-server",
+    "ghost-common",
+    "ghost-crypto",
+    "ghost-reality",
+    "ghost_flutter/rust",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Cryptography
+chacha20poly1305 = "0.10"
+rand = "0.8"
+
+# Bytes / buffers
+bytes = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+
+# TLS / Reality
+rustls = "0.23"
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
+rcgen = "0.13"
+tls-parser = "0.12"

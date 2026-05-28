@@ -1,0 +1,13 @@
+[package]
+name = "ghost-flutter-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+ghost-common = { path = "../../ghost-common" }
+ghost-client = { path = "../../ghost-client" }
