@@ -1,5 +1,5 @@
-name: ghost_proxy
-description: Ghost Proxy - Stealth VPN Client
+name: reliz_protocol
+description: Reliz Protocol - Stealth VPN Client
 publish_to: 'none'
 version: 0.1.0
 
@@ -10,12 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_rust_bridge: ^2.0.0
-  vpn_service:
-    git:
-      url: https://github.com/nicepkg/vpn_service.git
-      ref: main
   provider: ^6.0.0
   shared_preferences: ^2.0.0
+  app_links: ^6.3.0 # Добавили пакет для Диплинков, под который Девин писал код
 
 dev_dependencies:
   flutter_test:
