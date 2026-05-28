@@ -1,10 +1,13 @@
-//! Ghost Rust API для Flutter (через flutter_rust_bridge).
+//! Reliz Rust API для Flutter (через flutter_rust_bridge).
 //!
 //! Этот крейт экспортирует функции, которые Flutter вызывает через FFI:
-//! - start_proxy() — запуск SOCKS5-прокси
-//! - stop_proxy() — остановка прокси
-//! - get_status() — текущий статус
-//! - update_config() — обновление конфигурации
+//! - start_reliz_proxy() — запуск SOCKS5-прокси
+//! - stop_proxy()        — остановка прокси
+//! - get_proxy_status()  — текущий статус
+//! - is_proxy_running()  — флаг активности
+//!
+//! Ребрендинг: ранее `ghost_client` / `start_proxy`, теперь
+//! `reliz_client` / `start_reliz_proxy`.
 
 use ghost_common::ClientConfig;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -21,14 +24,24 @@ pub enum ProxyStatus {
 static PROXY_STATUS: AtomicI32 = AtomicI32::new(ProxyStatus::Stopped as i32);
 static PROXY_RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// Запустить Ghost-прокси с заданными параметрами.
+/// Запустить Reliz-прокси с заданными параметрами.
 ///
 /// Вызывается из Flutter при нажатии кнопки "Connect".
-pub fn start_proxy(
+///
+/// # Параметры
+/// * `server_addr` — адрес Reliz-сервера, например `vpn.example.com:443`.
+/// * `user_id` — UUID пользователя (32 hex-символа, без дефисов).
+/// * `enable_padding` — добавлять Dynamic Padding в исходящие фреймы.
+/// * `enable_fragmentation` — фрагментировать TLS ClientHello (anti-DPI).
+/// * `mask_domain` — домен SNI/Reality, под который маскируется клиент
+///   (например, `www.apple.com`). Передаётся в `ClientConfig` и далее
+///   в TLS-обёртку клиента — раньше Flutter-приложение его игнорировало.
+pub fn start_reliz_proxy(
     server_addr: String,
     user_id: String,
     enable_padding: bool,
     enable_fragmentation: bool,
+    mask_domain: String,
 ) -> i32 {
     PROXY_STATUS.store(ProxyStatus::Connecting as i32, Ordering::SeqCst);
     PROXY_RUNNING.store(true, Ordering::SeqCst);
@@ -40,11 +53,12 @@ pub fn start_proxy(
         enable_padding,
         enable_fragmentation,
         max_padding_len: 64,
+        mask_domain,
     };
 
     // Запускаем прокси в фоновом таске
     tokio::spawn(async move {
-        match ghost_client::run(config).await {
+        match reliz_client::run(config).await {
             Ok(()) => {
                 PROXY_STATUS.store(ProxyStatus::Stopped as i32, Ordering::SeqCst);
             }

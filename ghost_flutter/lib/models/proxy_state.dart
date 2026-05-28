@@ -1,4 +1,4 @@
-/// Модель состояния Ghost-прокси.
+/// Модель состояния Reliz-прокси.
 class ProxyState {
   final bool isConnected;
   final String serverAddr;
