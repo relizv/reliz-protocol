@@ -5,6 +5,7 @@ members = [
     "ghost-common",
     "ghost-crypto",
     "ghost-reality",
+    "reliz-app/src-tauri",
 ]
 resolver = "2"
 

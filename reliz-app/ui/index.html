@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reliz Protocol</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0e1a;
+            --bg-card: rgba(16, 22, 36, 0.9);
+            --border: rgba(0, 230, 118, 0.1);
+            --text: #e0e6f0;
+            --text-dim: #4a5568;
+            --text-muted: #6b7a90;
+            --accent: #00e676;
+            --accent-dark: #00c853;
+            --accent-glow: rgba(0, 230, 118, 0.12);
+            --danger: #ff5252;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Subtle gradient bg */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,230,118,0.04), transparent);
+            pointer-events: none;
+        }
+
+        /* ── Timer section ── */
+        .timer-section {
+            margin-top: 48px;
+            text-align: center;
+        }
+
+        .timer-label {
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        .timer-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--text);
+            letter-spacing: 2px;
+        }
+
+        /* ── Big round button ── */
+        .btn-wrapper {
+            margin-top: 36px;
+            position: relative;
+        }
+
+        /* Glow ring behind button */
+        .btn-glow {
+            position: absolute;
+            inset: -12px;
+            border-radius: 50%;
+            background: transparent;
+            transition: box-shadow 0.4s;
+        }
+
+        .btn-glow.connected {
+            box-shadow: 0 0 40px 8px var(--accent-glow), 0 0 80px 20px rgba(0,230,118,0.05);
+        }
+
+        .connect-btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            position: relative;
+            z-index: 1;
+        }
+
+        .connect-btn:hover {
+            border-color: rgba(0,230,118,0.3);
+            background: rgba(0,230,118,0.05);
+        }
+
+        .connect-btn:active {
+            transform: scale(0.96);
+        }
+
+        .connect-btn.connected {
+            border-color: var(--accent);
+            background: rgba(0,230,118,0.1);
+        }
+
+        .connect-btn.connecting {
+            border-color: rgba(255,193,7,0.4);
+            animation: pulse-border 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(255,193,7,0.2); }
+            50% { border-color: rgba(255,193,7,0.5); }
+        }
+
+        /* Play / Pause icon (pure CSS) */
+        .icon-play {
+            width: 0; height: 0;
+            border-style: solid;
+            border-width: 18px 0 18px 30px;
+            border-color: transparent transparent transparent var(--text);
+            margin-left: 6px;
+            transition: all 0.2s;
+        }
+
+        .connect-btn:hover .icon-play {
+            border-left-color: var(--accent);
+        }
+
+        .icon-pause {
+            display: flex;
+            gap: 10px;
+        }
+
+        .icon-pause span {
+            width: 8px;
+            height: 32px;
+            background: var(--accent);
+            border-radius: 3px;
+        }
+
+        /* ── Status text ── */
+        .status-text {
+            margin-top: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-align: center;
+            letter-spacing: 0.5px;
+            transition: color 0.3s;
+        }
+
+        .status-text.connected { color: var(--accent); }
+        .status-text.error { color: var(--danger); }
+
+        /* ── Token input ── */
+        .token-section {
+            margin-top: auto;
+            margin-bottom: 32px;
+            width: 100%;
+            padding: 0 24px;
+        }
+
+        .token-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+        }
+
+        .token-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .token-input {
+            width: 100%;
+            background: rgba(6, 10, 18, 0.8);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            padding: 11px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .token-input::placeholder {
+            color: var(--text-dim);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .token-input:focus {
+            border-color: rgba(0,230,118,0.3);
+        }
+
+        .token-input:disabled {
+            opacity: 0.4;
+        }
+
+        /* ── Error ── */
+        .error-msg {
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--danger);
+            min-height: 16px;
+        }
+
+        /* ── Footer ── */
+        .footer {
+            padding-bottom: 16px;
+            font-size: 10px;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="timer-section">
+        <div class="timer-label">Connection time</div>
+        <div class="timer-value" id="timer">00:00:00</div>
+    </div>
+
+    <div class="btn-wrapper">
+        <div class="btn-glow" id="btn-glow"></div>
+        <button class="connect-btn" id="connect-btn" onclick="handleClick()">
+            <div class="icon-play" id="btn-icon"></div>
+        </button>
+    </div>
+
+    <div class="status-text" id="status-text">Disconnected</div>
+
+    <div class="token-section">
+        <div class="token-card">
+            <div class="token-label">Connection Token</div>
+            <input
+                type="text"
+                id="token-input"
+                class="token-input"
+                placeholder="rlz_..."
+                spellcheck="false"
+                autocomplete="off"
+            >
+            <div class="error-msg" id="error-msg"></div>
+        </div>
+    </div>
+
+    <div class="footer">socks5 → 127.0.0.1:10808</div>
+
+    <script>
+        const { invoke } = window.__TAURI__.core;
+
+        const STATUS = { STOPPED: 0, CONNECTING: 1, CONNECTED: 2, ERROR: 3 };
+        let currentStatus = STATUS.STOPPED;
+        let pollTimer = null;
+        let startTime = null;
+
+        const $btn = document.getElementById('connect-btn');
+        const $icon = document.getElementById('btn-icon');
+        const $glow = document.getElementById('btn-glow');
+        const $status = document.getElementById('status-text');
+        const $timer = document.getElementById('timer');
+        const $input = document.getElementById('token-input');
+        const $error = document.getElementById('error-msg');
+
+        function showError(msg) {
+            $error.textContent = msg;
+            setTimeout(() => { if ($error.textContent === msg) $error.textContent = ''; }, 4000);
+        }
+
+        function setIcon(type) {
+            if (type === 'pause') {
+                $icon.className = 'icon-pause';
+                $icon.innerHTML = '<span></span><span></span>';
+            } else {
+                $icon.className = 'icon-play';
+                $icon.innerHTML = '';
+            }
+        }
+
+        function updateUI(status) {
+            currentStatus = status;
+            $btn.className = 'connect-btn';
+            $glow.className = 'btn-glow';
+            $status.className = 'status-text';
+
+            switch (status) {
+                case STATUS.STOPPED:
+                    setIcon('play');
+                    $status.textContent = 'Disconnected';
+                    $input.disabled = false;
+                    $timer.textContent = '00:00:00';
+                    startTime = null;
+                    break;
+                case STATUS.CONNECTING:
+                    $btn.classList.add('connecting');
+                    setIcon('play');
+                    $status.textContent = 'Connecting...';
+                    $input.disabled = true;
+                    break;
+                case STATUS.CONNECTED:
+                    $btn.classList.add('connected');
+                    $glow.classList.add('connected');
+                    $status.classList.add('connected');
+                    setIcon('pause');
+                    $status.textContent = 'Connected';
+                    $input.disabled = true;
+                    if (!startTime) startTime = Date.now();
+                    break;
+                case STATUS.ERROR:
+                    $status.classList.add('error');
+                    setIcon('play');
+                    $status.textContent = 'Error';
+                    $input.disabled = false;
+                    startTime = null;
+                    break;
+            }
+        }
+
+        function tickTimer() {
+            if (!startTime) return;
+            const s = Math.floor((Date.now() - startTime) / 1000);
+            const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+            const ss = String(s % 60).padStart(2, '0');
+            $timer.textContent = `${hh}:${mm}:${ss}`;
+        }
+
+        async function pollStatus() {
+            try {
+                const r = await invoke('get_status');
+                if (r.status !== currentStatus) updateUI(r.status);
+                if (r.status === STATUS.CONNECTED && r.uptime_secs > 0) {
+                    startTime = Date.now() - r.uptime_secs * 1000;
+                }
+                tickTimer();
+            } catch (_) {}
+        }
+
+        async function handleClick() {
+            $error.textContent = '';
+
+            if (currentStatus === STATUS.CONNECTED) {
+                try {
+                    await invoke('disconnect');
+                    updateUI(STATUS.STOPPED);
+                } catch (e) { showError(String(e)); }
+                return;
+            }
+
+            const token = $input.value.trim();
+            if (!token) { showError('Вставьте токен'); $input.focus(); return; }
+            if (!token.startsWith('rlz_')) { showError('Токен начинается с rlz_'); $input.focus(); return; }
+
+            try {
+                updateUI(STATUS.CONNECTING);
+                await invoke('connect', { token });
+                updateUI(STATUS.CONNECTED);
+            } catch (e) {
+                showError(String(e));
+                updateUI(STATUS.ERROR);
+            }
+        }
+
+        $input.addEventListener('keydown', e => { if (e.key === 'Enter') handleClick(); });
+
+        // Poll every second
+        setInterval(pollStatus, 1000);
+    </script>
+</body>
+</html>
