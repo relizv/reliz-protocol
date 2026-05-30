@@ -1,0 +1,17 @@
+[package]
+name = "ghost-tun"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+etherparse = "0.18"
+libc = "0.2"
+
+[lib]
+name = "ghost_tun"
+crate-type = ["lib", "cdylib", "staticlib"]

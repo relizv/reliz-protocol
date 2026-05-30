@@ -14,5 +14,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 rand = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+webpki-roots = { workspace = true }
+sha2 = { workspace = true }
 ghost-common = { path = "../ghost-common" }
 ghost-crypto = { path = "../ghost-crypto" }
+ghost-reality = { path = "../ghost-reality" }

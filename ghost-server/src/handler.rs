@@ -10,18 +10,39 @@ use bytes::BytesMut;
 use ghost_common::{GhostFrame, TargetAddr, USER_ID_LEN};
 use ghost_crypto::GhostCipher;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::{debug, error, info};
 
 use crate::ServerState;
 
-/// Обработка одного клиентского подключения.
-pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -> Result<()> {
+/// Обработка одного клиентского подключения (TCP или TLS).
+pub async fn handle_connection<S>(
+    mut stream: S,
+    state: Arc<ServerState>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Send + Unpin,
+{
     let mut len_buf = [0u8; 2];
     let mut enc_buf = vec![0u8; 65536 + 256];
 
-    // ── Читаем первый фрейм (инициализация) ───────────────────────────
+    // ── Читаем User ID (16 байт открытым текстом) ─────────────────────
+
+    let mut user_id = [0u8; USER_ID_LEN];
+    stream.read_exact(&mut user_id).await?;
+    let user_id_hex = hex_encode(&user_id);
+
+    // Проверяем авторизацию до расшифровки
+    if !state.allowed_users.contains(&user_id_hex) {
+        bail!("Unauthorized user: {}", user_id_hex);
+    }
+
+    let secret = b"ghost_default_key!";
+    let key = ghost_crypto::derive_key(&user_id, secret);
+    let cipher = GhostCipher::new(&key)?;
+
+    // ── Читаем зашифрованный init frame ───────────────────────────────
 
     stream.read_exact(&mut len_buf).await?;
     let frame_len = u16::from_be_bytes(len_buf) as usize;
@@ -32,24 +53,6 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
 
     stream.read_exact(&mut enc_buf[..frame_len]).await?;
     let encrypted_data = &enc_buf[..frame_len];
-
-    // Расшифровываем
-    // TODO: В продакшене — ключ хранится в конфиге, не хардкод
-    let secret = b"ghost_default_key!";
-    let user_id_hex = extract_user_id_from_encrypted(encrypted_data, secret)?;
-
-    // Проверяем авторизацию
-    if !state.allowed_users.contains(&user_id_hex) {
-        bail!("Unauthorized user: {}", user_id_hex);
-    }
-
-    let mut user_id = [0u8; USER_ID_LEN];
-    for i in 0..USER_ID_LEN {
-        user_id[i] = u8::from_str_radix(&user_id_hex[i * 2..i * 2 + 2], 16)?;
-    }
-
-    let key = ghost_crypto::derive_key(&user_id, secret);
-    let cipher = GhostCipher::new(&key)?;
 
     let plaintext = cipher.decrypt(encrypted_data)?;
     let frame_data = BytesMut::from(&plaintext[..]);
@@ -73,7 +76,7 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
 
     // ── copy_bidirectional ────────────────────────────────────────────
 
-    let (mut client_rd, mut client_wr) = stream.split();
+    let (mut client_rd, mut client_wr) = tokio::io::split(stream);
     let (mut remote_rd, mut remote_wr) = remote_stream.split();
 
     let cipher_c2s = GhostCipher::new(&key)?;
@@ -85,7 +88,6 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
         let mut enc_buf = vec![0u8; 65536 + 256];
 
         loop {
-            // Читаем длину зашифрованного фрейма
             match client_rd.read_exact(&mut len_buf).await {
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
@@ -100,13 +102,11 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
                 break;
             }
 
-            // Читаем зашифрованный фрейм
             if let Err(e) = client_rd.read_exact(&mut enc_buf[..frame_len]).await {
                 error!("Client read frame error: {}", e);
                 break;
             }
 
-            // Расшифровываем
             match cipher_c2s.decrypt(&enc_buf[..frame_len]) {
                 Ok(plaintext) => {
                     let frame_data = BytesMut::from(&plaintext[..]);
@@ -147,7 +147,6 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
                 }
             };
 
-            // Формируем ответный Ghost-фрейм
             let frame = GhostFrame::new(
                 user_id,
                 TargetAddr::None,
@@ -188,19 +187,6 @@ pub async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) -
     Ok(())
 }
 
-/// Попытка извлечь User ID из зашифрованных данных для авторизации.
-/// Мы пробуем расшифровать с каждым известным пользователем.
-fn extract_user_id_from_encrypted(_encrypted: &[u8], _secret: &[u8]) -> Result<String> {
-    // Простая стратегия: мы не можем узнать User ID до расшифровки.
-    // В текущей реализации мы используем фиксированный ключ деривации,
-    // так что пользователь всего один. Для продакшена нужен более
-    // сложный механизм (например, первые 16 байт — User ID в открытом виде).
-    //
-    // TODO: В продакшене передавать User ID в открытом виде перед шифрованным фреймом:
-    // [UserID:16][EncryptedFrame]
-    Ok("00000000000000000000000000000001".to_string())
-}
-
 /// Резолвинг целевого адреса в SocketAddr.
 async fn resolve_target(target: &TargetAddr) -> Result<std::net::SocketAddr> {
     match target {
@@ -216,4 +202,8 @@ async fn resolve_target(target: &TargetAddr) -> Result<std::net::SocketAddr> {
                 .context(format!("No addresses found for {}", addr))
         }
     }
+}
+
+fn hex_encode(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02x}", b)).collect()
 }

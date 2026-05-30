@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.File
 
@@ -19,8 +20,8 @@ import java.io.File
  * процессы. Этот сервис:
  *   1. Поднимает постоянное уведомление (startForeground) — процесс живёт,
  *      пока VPN активен.
- *   2. Создаёт TUN-интерфейс и маршрутизирует весь трафик через tun2socks →
- *      локальный Reliz SOCKS5 (127.0.0.1:10808).
+ *   2. Создаёт TUN-интерфейс и маршрутизирует весь трафик через Rust tun2socks
+ *      (ghost-tun) → локальный Reliz SOCKS5 (127.0.0.1:10808).
  *   3. Исключает своё приложение из VPN (addDisallowedApplication), чтобы
  *      исходящие соединения Rust-прокси к серверу не зацикливались в TUN.
  */
@@ -39,7 +40,6 @@ class RelizVpnService : VpnService() {
     }
 
     private var tun: ParcelFileDescriptor? = null
-    private var tunnelThread: Thread? = null
 
     @Volatile
     private var running = false
@@ -52,7 +52,6 @@ class RelizVpnService : VpnService() {
             }
             else -> startVpn()
         }
-        // START_STICKY: если система всё-таки убьёт сервис — она пересоздаст его.
         return START_STICKY
     }
 
@@ -70,8 +69,6 @@ class RelizVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
 
-        // Исключаем трафик самого приложения из VPN, чтобы соединения
-        // Rust-прокси к удалённому серверу не уходили обратно в TUN (loop).
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: Exception) {
@@ -89,41 +86,27 @@ class RelizVpnService : VpnService() {
         tun = fd
         running = true
 
-        val configPath = writeTun2socksConfig().absolutePath
-        val tunFd = fd.fd
-        tunnelThread = Thread({
-            if (Tun2Socks.ensureLoaded()) {
-                try {
-                    Tun2Socks.tunnelStart(configPath, tunFd)
-                } catch (_: Throwable) {
-                    // Нативный tun2socks завершился / недоступен.
-                }
+        // Запускаем Rust tun2socks (ghost-tun) напрямую через JNI
+        if (GhostTunBridge.ensureLoaded()) {
+            val rc = GhostTunBridge.startTun(fd.fd)
+            if (rc != 0) {
+                Log.e("RelizVpnService", "ghost_tun_start failed with code $rc")
+                stopVpn()
+            } else {
+                Log.i("RelizVpnService", "ghost-tun started successfully")
             }
-        }, "reliz-tun2socks")
-        tunnelThread?.start()
-    }
-
-    private fun writeTun2socksConfig(): File {
-        // Формат конфига hev-socks5-tunnel.
-        val yaml = """
-            tunnel:
-              mtu: $MTU
-            socks5:
-              address: $SOCKS_HOST
-              port: $SOCKS_PORT
-              udp: udp
-            misc:
-              task-stack-size: 20480
-        """.trimIndent()
-        val f = File(cacheDir, "tun2socks.yaml")
-        f.writeText(yaml)
-        return f
+        } else {
+            Log.e("RelizVpnService", "Native library not loaded, cannot start TUN relay")
+            stopVpn()
+        }
     }
 
     private fun stopVpn() {
         running = false
         try {
-            if (Tun2Socks.ensureLoaded()) Tun2Socks.tunnelStop()
+            if (GhostTunBridge.ensureLoaded()) {
+                GhostTunBridge.stopTun()
+            }
         } catch (_: Throwable) {
         }
         try {
@@ -131,7 +114,6 @@ class RelizVpnService : VpnService() {
         } catch (_: Exception) {
         }
         tun = null
-        tunnelThread = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -143,7 +125,6 @@ class RelizVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        // Пользователь отозвал VPN-разрешение из системных настроек.
         stopVpn()
         super.onRevoke()
     }
@@ -189,7 +170,6 @@ class RelizVpnService : VpnService() {
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+: обязателен тип foreground-сервиса.
             startForeground(
                 NOTIF_ID,
                 notif,

@@ -123,15 +123,21 @@ impl GhostCipher {
 
 // ── Утилиты для деривации ключей ───────────────────────────────────────
 
-/// Простейшая деривация ключа из UUID пользователя и pre-shared secret.
-/// В реальном продакшене стоит использовать HKDF или Argon2.
+use hkdf::Hkdf;
+use sha2::Sha256;
+
+/// Деривация ключа из UUID пользователя и pre-shared secret через HKDF-SHA256.
+///
+/// Использует HKDF-Extract + HKDF-Expand с фиксированным info = b"ghost-v1".
+/// Гарантирует криптографическую стойкость при условии, что secret имеет
+/// достаточную энтропию (>= 128 бит).
 pub fn derive_key(user_id: &[u8; 16], secret: &[u8]) -> [u8; KEY_SIZE] {
-    // Простая (но рабочая) деривация через циклическое XOR
+    let salt = secret; // PSK как salt
+    let ikm = user_id; // User ID как IKM
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
     let mut key = [0u8; KEY_SIZE];
-    for i in 0..16 {
-        key[i] = user_id[i] ^ secret[i % secret.len()];
-        key[i + 16] = user_id[i] ^ secret[(i + 8) % secret.len()];
-    }
+    hk.expand(b"ghost-v1", &mut key)
+        .expect("HKDF expand to 32 bytes never fails");
     key
 }
 
@@ -195,5 +201,10 @@ mod tests {
         let key2 = derive_key(&user_id, secret);
 
         assert_eq!(key1, key2);
+
+        // Разные user_id → разные ключи
+        let user_id2 = [0x02u8; 16];
+        let key3 = derive_key(&user_id2, secret);
+        assert_ne!(key1, key3);
     }
 }

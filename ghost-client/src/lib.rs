@@ -5,6 +5,7 @@
 //! - Шаг 2: SOCKS5-хэндшейк
 //! - Шаг 3: Парсинг целевого адреса
 
+pub mod fragment;
 pub mod tunnel;
 
 use anyhow::Result;
