@@ -1,29 +1,33 @@
 import 'dart:async';
 
+import '../config/reliz_config.dart';
 import '../models/proxy_state.dart';
 import '../src/rust/api.dart' as api;
 import '../src/rust/frb_generated.dart';
+import 'vpn_controller.dart';
 
-/// Сервис управления Reliz-прокси.
+/// Сервис управления Reliz-VPN.
 ///
-/// Все методы — это тонкая обёртка вокруг сгенерированных
-/// flutter_rust_bridge-биндингов в `lib/src/rust/`. Никаких фейковых
-/// таймеров и `Future.delayed` здесь больше нет: реальный статус
-/// соединения берётся из Rust через [api.getProxyStatus].
+/// Оркестрирует три слоя:
+///   1. Системный `VpnService` (Android) — TUN-интерфейс + foreground, чтобы
+///      ОС не убивала процесс в фоне ([VpnController]).
+///   2. Локальный SOCKS5-прокси на Rust ([api.startRelizProxy]).
+///   3. tun2socks внутри сервиса заворачивает пакеты TUN → SOCKS5.
+///
+/// Конфигурация берётся из [RelizConfig] (один токен на сервере), поэтому
+/// метод [connect] больше не принимает параметров.
 class ProxyService {
   ProxyService();
+
+  final VpnController _vpn = VpnController();
 
   ProxyState _state = const ProxyState();
   final _stateController = StreamController<ProxyState>.broadcast();
 
-  /// Поллинг статуса из Rust (Stopped/Connecting/Connected/Error).
   Timer? _statusPoller;
-
-  /// Таймер обновления длительности сессии.
   Timer? _sessionTimer;
   DateTime? _connectedAt;
 
-  /// Гарантируем единственную инициализацию rust-моста на процесс.
   static bool _rustInitialized = false;
   static Future<void> _ensureRustInit() async {
     if (_rustInitialized) return;
@@ -39,41 +43,48 @@ class ProxyService {
     _stateController.add(_state);
   }
 
-  /// Подключиться к Reliz-серверу.
-  ///
-  /// Делегирует в нативный `start_reliz_proxy(...)` через flutter_rust_bridge,
-  /// затем стартует поллер `get_proxy_status()` для обновления UI.
-  Future<void> connect({
-    required String serverAddr,
-    required String userId,
-    required bool enablePadding,
-    required bool enableFragmentation,
-    required String maskDomain,
-  }) async {
+  /// Подключиться: разрешение → SOCKS5-прокси → VpnService.
+  Future<void> connect() async {
     await _ensureRustInit();
-
     _update(_state.copyWith(
-      isConnected: false,
-      serverAddr: serverAddr,
-      userId: userId,
-      enablePadding: enablePadding,
-      enableFragmentation: enableFragmentation,
-      maskDomain: maskDomain,
+      status: VpnStatus.connecting,
       statusText: 'Connecting...',
     ));
 
-    final rc = await api.startRelizProxy(
-      serverAddr: serverAddr,
-      userId: userId,
-      enablePadding: enablePadding,
-      enableFragmentation: enableFragmentation,
-      maskDomain: maskDomain,
-    );
+    // 1. Системный диалог согласия на VPN.
+    final granted = await _vpn.prepare();
+    if (!granted) {
+      _update(const ProxyState(
+        status: VpnStatus.error,
+        statusText: 'VPN permission denied',
+      ));
+      return;
+    }
 
+    // 2. Поднимаем локальный SOCKS5-прокси (Rust). Конфиг — из RelizConfig.
+    final rc = await api.startRelizProxy(
+      serverAddr: RelizConfig.serverAddr,
+      userId: RelizConfig.userId,
+      enablePadding: RelizConfig.enablePadding,
+      enableFragmentation: RelizConfig.enableFragmentation,
+      maskDomain: RelizConfig.maskDomain,
+    );
     if (rc != 0) {
       _update(_state.copyWith(
-        isConnected: false,
-        statusText: 'Error (code $rc)',
+        status: VpnStatus.error,
+        statusText: 'Proxy error (code $rc)',
+      ));
+      return;
+    }
+
+    // 3. Запускаем системный VpnService (foreground + TUN + tun2socks).
+    try {
+      await _vpn.start();
+    } catch (_) {
+      await api.stopProxy();
+      _update(_state.copyWith(
+        status: VpnStatus.error,
+        statusText: 'VPN start failed',
       ));
       return;
     }
@@ -81,34 +92,46 @@ class ProxyService {
     _startStatusPolling();
   }
 
-  /// Отключиться.
+  /// Отключиться: гасим VpnService, затем прокси.
   Future<void> disconnect() async {
     await _ensureRustInit();
+    try {
+      await _vpn.stop();
+    } catch (_) {
+      // Сервис мог уже умереть — игнорируем.
+    }
     await api.stopProxy();
     _stopStatusPolling();
     _stopSessionTimer();
-    _update(_state.copyWith(
-      isConnected: false,
+    _update(const ProxyState(
+      status: VpnStatus.disconnected,
       statusText: 'Disconnected',
-      bytesIn: 0,
-      bytesOut: 0,
-      connectionTime: null,
     ));
   }
 
-  /// Маппинг i32-кода из Rust (см. `ProxyStatus` в `api.rs`) на UI-строку.
-  String _statusText(int code) {
+  VpnStatus _mapStatus(int code) {
     switch (code) {
-      case 0:
-        return 'Disconnected';
       case 1:
-        return 'Connecting...';
+        return VpnStatus.connecting;
       case 2:
-        return 'Connected';
+        return VpnStatus.connected;
       case 3:
-        return 'Error';
+        return VpnStatus.error;
       default:
-        return 'Unknown';
+        return VpnStatus.disconnected;
+    }
+  }
+
+  String _statusText(VpnStatus s) {
+    switch (s) {
+      case VpnStatus.connecting:
+        return 'Connecting...';
+      case VpnStatus.connected:
+        return 'Connected';
+      case VpnStatus.error:
+        return 'Error';
+      case VpnStatus.disconnected:
+        return 'Disconnected';
     }
   }
 
@@ -116,23 +139,18 @@ class ProxyService {
     _statusPoller?.cancel();
     _statusPoller = Timer.periodic(const Duration(milliseconds: 500), (_) async {
       final code = await api.getProxyStatus();
-      final connected = code == 2;
-      final text = _statusText(code);
+      final s = _mapStatus(code);
 
-      if (connected && !_state.isConnected) {
+      if (s == VpnStatus.connected && _state.status != VpnStatus.connected) {
         _startSessionTimer();
       }
-      if (!connected) {
+      if (s != VpnStatus.connected) {
         _stopSessionTimer();
       }
 
-      _update(_state.copyWith(
-        isConnected: connected,
-        statusText: text,
-      ));
+      _update(_state.copyWith(status: s, statusText: _statusText(s)));
 
-      if (code == 0 || code == 3) {
-        // финальное состояние — поллить дальше нет смысла
+      if (s == VpnStatus.disconnected || s == VpnStatus.error) {
         _stopStatusPolling();
       }
     });
@@ -147,7 +165,7 @@ class ProxyService {
     _connectedAt = DateTime.now();
     _sessionTimer?.cancel();
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_connectedAt != null && _state.isConnected) {
+      if (_connectedAt != null && _state.status == VpnStatus.connected) {
         final elapsed = DateTime.now().difference(_connectedAt!);
         _update(_state.copyWith(connectionTime: elapsed));
       }

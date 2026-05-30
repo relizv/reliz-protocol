@@ -15,13 +15,24 @@ use tracing::{info, warn};
 
 /// Запустить клиент Ghost: слушать SOCKS5 и проксировать через сервер.
 pub async fn run(config: ClientConfig) -> Result<()> {
-    // Инициализация логирования
-    tracing_subscriber::fmt()
+    run_with_ready(config, None).await
+}
+
+/// То же, что [`run`], но опционально сигнализирует о готовности (после bind
+/// SOCKS5-листенера) через `ready`. Используется Flutter-мостом, чтобы честно
+/// выставлять статус «Connected» только после реального открытия порта.
+pub async fn run_with_ready(
+    config: ClientConfig,
+    ready: Option<tokio::sync::oneshot::Sender<()>>,
+) -> Result<()> {
+    // Инициализация логирования. try_init не паникует при повторном вызове
+    // (важно для мобильного приложения: connect может вызываться много раз).
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "ghost_client=info".into()),
         )
-        .init();
+        .try_init();
 
     info!("🚀 Ghost Client starting...");
     info!("   SOCKS5 listen : {}", config.socks5_listen);
@@ -35,6 +46,11 @@ pub async fn run(config: ClientConfig) -> Result<()> {
     // Шаг 1: TcpListener
     let listener = TcpListener::bind(&config.socks5_listen).await?;
     info!("✅ SOCKS5 proxy listening on {}", config.socks5_listen);
+
+    // Сигнализируем мосту, что порт успешно открыт → честный статус Connected.
+    if let Some(tx) = ready {
+        let _ = tx.send(());
+    }
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
