@@ -16,6 +16,9 @@ anyhow = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 toml = "0.8"
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+rcgen = { workspace = true }
 ghost-common = { path = "../ghost-common" }
 ghost-crypto = { path = "../ghost-crypto" }
 ghost-reality = { path = "../ghost-reality" }

@@ -86,7 +86,7 @@ impl TargetAddr {
     }
 
     /// Сериализация в байты (для фрейма протокола Ghost).
-    pub fn encode(&self, buf: &mut BytesMut) {
+    pub fn encode(&self, buf: &mut BytesMut) -> Result<(), ProtocolError> {
         match self {
             TargetAddr::None => {
                 buf.put_u8(ADDR_TYPE_NONE);
@@ -104,15 +104,15 @@ impl TargetAddr {
             TargetAddr::Domain(domain, port) => {
                 buf.put_u8(ADDR_TYPE_DOMAIN);
                 let domain_bytes = domain.as_bytes();
-                assert!(
-                    domain_bytes.len() <= 255,
-                    "domain name too long for encoding"
-                );
+                if domain_bytes.len() > 255 {
+                    return Err(ProtocolError::InvalidDomainLength(domain_bytes.len()));
+                }
                 buf.put_u8(domain_bytes.len() as u8);
                 buf.put_slice(domain_bytes);
                 buf.put_u16(*port);
             }
         }
+        Ok(())
     }
 
     /// Десериализация из буфера.
@@ -259,7 +259,7 @@ impl GhostFrame {
 
         buf.put_u8(self.version);
         buf.put_slice(&self.user_id);
-        self.target.encode(&mut buf);
+        self.target.encode(&mut buf).expect("domain length validated on creation");
         buf.put_u16(self.payload.len() as u16);
         buf.put_slice(&self.payload);
         buf.put_u8(self.padding.len() as u8);
@@ -361,6 +361,10 @@ pub struct ClientConfig {
     /// Домен для маскировки SNI (Reality), например `www.apple.com`.
     /// Передаётся в TLS-обёртку клиента.
     pub mask_domain: String,
+
+    /// Приватный ключ авторизации Reality (hex-строка 64 символа = 32 байта).
+    /// Используется для проверки fingerprint серверного сертификата.
+    pub reality_auth_key: String,
 }
 
 impl Default for ClientConfig {
@@ -373,6 +377,7 @@ impl Default for ClientConfig {
             enable_fragmentation: false,
             max_padding_len: 64,
             mask_domain: "www.apple.com".to_string(),
+            reality_auth_key: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
         }
     }
 }

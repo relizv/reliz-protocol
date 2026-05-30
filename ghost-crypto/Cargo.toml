@@ -7,4 +7,6 @@ edition = "2021"
 chacha20poly1305 = { workspace = true }
 rand = { workspace = true }
 bytes = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
 ghost-common = { path = "../ghost-common" }

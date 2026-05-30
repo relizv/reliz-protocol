@@ -39,6 +39,9 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 /// Хэндл фонового таска прокси (для остановки).
 static TASK: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
+/// Хэндл фонового таска tun2socks.
+static TUN_TASK: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+
 fn runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| {
         Builder::new_multi_thread()
@@ -77,6 +80,7 @@ pub fn start_reliz_proxy(
         enable_fragmentation,
         max_padding_len: 64,
         mask_domain,
+        reality_auth_key: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
     };
 
     let rt = runtime();
@@ -140,7 +144,58 @@ pub fn test_connection(_server_addr: String) -> i32 {
     0 // success
 }
 
+/// Запустить tun2socks внутри Rust (вместо внешнего libhev-socks5-tunnel.so).
+///
+/// Вызывается из Kotlin (RelizVpnService) после создания TUN-интерфейса.
+/// `tun_fd` — сырой fd из `ParcelFileDescriptor.fd`.
+/// Блокирует до остановки через `stop_tun`.
+pub fn start_tun(tun_fd: i32) -> i32 {
+    if tun_fd < 0 {
+        return -1;
+    }
+
+    let rt = runtime();
+    let handle = rt.spawn(async move {
+        let socks5 = std::net::SocketAddr::from(([127, 0, 0, 1], 10808));
+        match ghost_tun::TunProcessor::new(tun_fd, socks5) {
+            Ok(processor) => {
+                if let Err(e) = processor.run().await {
+                    tracing::error!("Tun processor error: {}", e);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to create TunProcessor: {}", e);
+            }
+        }
+    });
+
+    *TUN_TASK.lock().unwrap() = Some(handle);
+    0
+}
+
+/// Остановить tun2socks.
+pub fn stop_tun() -> i32 {
+    if let Some(handle) = TUN_TASK.lock().unwrap().take() {
+        handle.abort();
+    }
+    0
+}
+
 /// Получить версию протокола.
 pub fn get_protocol_version() -> u8 {
     ghost_common::PROTOCOL_VERSION
+}
+
+// ── C/JNI экспорты для прямого вызова из Android Service ───────────────
+
+/// C-экспорт для JNI. Вызывается из `GhostTunBridge.kt`.
+#[no_mangle]
+pub extern "C" fn ghost_tun_start(tun_fd: i32) -> i32 {
+    start_tun(tun_fd)
+}
+
+/// C-экспорт для JNI.
+#[no_mangle]
+pub extern "C" fn ghost_tun_stop() -> i32 {
+    stop_tun()
 }

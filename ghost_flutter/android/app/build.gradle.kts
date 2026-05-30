@@ -46,7 +46,6 @@ flutter {
 // Нативный tun2socks (libhev-socks5-tunnel.so) подключается через jniLibs.
 // Положи собранные библиотеки в src/main/jniLibs/<abi>/ (см. Tun2Socks.kt).
 // Архитектуры: arm64-v8a, armeabi-v7a, x86_64.
-//
-// android {
-//     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
-// }
+android {
+    sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
+}
