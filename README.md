@@ -2,7 +2,7 @@
 
 # 👻 Reliz Protocol (Ghost)
 
-**Stealth-прокси на чистом Rust: кастомный шифрованный транспорт, Reality-маскировка под TLS, анти-DPI и мобильный VPN-клиент.**
+**A stealth proxy in pure Rust: custom encrypted transport, Reality TLS masquerading, anti-DPI tooling, and a mobile VPN client.**
 
 [![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -13,43 +13,43 @@
 
 ---
 
-> ⚠️ **Дисклеймер:** Это исследовательский проект, написанный для изучения устройства современных stealth-протоколов (VLESS / Reality / XTLS) и техник обхода DPI. Используйте на свой риск. Текущая версия — рабочий прототип, **не прошедший аудит безопасности** (см. раздел [Известные ограничения](#известные-ограничения)).
+> ⚠️ **Disclaimer:** This is a research project written to explore the internals of modern stealth protocols (VLESS / Reality / XTLS) and DPI-bypass techniques. Use at your own risk. The current version is a working prototype that **has not undergone a security audit** (see [Known Limitations](#known-limitations)).
 
-## Что это
+## What is this
 
-Reliz Protocol (кодовое имя **Ghost**) — собственная реализация stealth-туннеля, вдохновлённая идеями `VLESS + Reality + XTLS-Vision` из экосистемы Xray, но написанная с нуля на Rust. Задача проекта — создать прозрачный прокси, трафик которого для внешнего наблюдателя (DPI / активные сканеры цензора) неотличим от обычной HTTPS-сессии к легальному сайту.
+Reliz Protocol (codename **Ghost**) is a custom stealth tunnel implementation inspired by `VLESS + Reality + XTLS-Vision` from the Xray ecosystem, written from scratch in Rust. The goal is to build a transparent proxy whose traffic is indistinguishable from a regular HTTPS session to a legitimate website for any external observer (DPI / active censorship scanners).
 
-Проект включает полный стек: серверный демон, клиент с локальным SOCKS5, криптослой, Reality-маскировку и мобильное Android-приложение на Flutter с userspace `tun2socks`.
+The project includes a full stack: a server daemon, a client with a local SOCKS5 inbound, a crypto layer, Reality masquerading, and an Android mobile app built with Flutter and userspace `tun2socks`.
 
-## Ключевые фичи
+## Key Features
 
-- **Reality-маскировка:** TLS-обёртка с подменой SNI под легальный домен (например, `www.apple.com`). При стороннем сканировании сервер прикидывается реальным сайтом и отдаёт валидный HTTP-редирект, а настоящий клиент аутентифицируется скрытым токеном в TLS-хендшейке.
-- **Анти-DPI инструменты:**
-  - *Dynamic Padding* — добавление случайного мусора к фреймам для маскировки сигнатур по размеру пакетов.
-  - *TCP Fragmentation* (в стиле ByeDPI) — дробление TLS ClientHello на мелкие TCP-сегменты, ломающее сборку сигнатур на стороне DPI.
-- **JA4-профили:** Встроенные отпечатки Chrome 131 и Firefox 133 + парсер JA4 для анализа входящих ClientHello на сервере.
-- **Шифрование:** AEAD на базе ChaCha20-Poly1305 с деривацией ключей через HKDF-SHA256 (на основе User ID и pre-shared secret).
-- **Android-клиент:** Flutter UI + интеграция с Rust через `flutter_rust_bridge`. Использует системный `VpnService` и собственный модуль `ghost-tun`.
+- **Reality masquerading:** TLS wrapper with SNI spoofed to a legitimate domain (e.g. `www.apple.com`). When probed by an external scanner, the server impersonates a real website and returns a valid HTTP redirect; a genuine client authenticates via a hidden token embedded in the TLS handshake.
+- **Anti-DPI tooling:**
+  - *Dynamic Padding* — appends random noise to frames to obscure packet-size fingerprints.
+  - *TCP Fragmentation* (ByeDPI-style) — splits the TLS ClientHello into small TCP segments, breaking DPI signature reassembly.
+- **JA4 profiles:** Built-in Chrome 131 and Firefox 133 fingerprints, plus a JA4 parser for validating incoming ClientHello on the server side.
+- **Encryption:** AEAD via ChaCha20-Poly1305 with key derivation through HKDF-SHA256 (based on User ID and a pre-shared secret).
+- **Android client:** Flutter UI + Rust integration via `flutter_rust_bridge`. Uses the system `VpnService` and the custom `ghost-tun` module.
 
-## Структура проекта (монорепозиторий)
+## Project Structure (monorepo)
 
-| Крейт | Назначение |
+| Crate | Purpose |
 |---|---|
-| `ghost-common` | Типы протокола, фрейминг (`GhostFrame`), адресация и стелс-примитивы (padding, фрагментация) |
-| `ghost-crypto` | Обёртка над ChaCha20-Poly1305 (`GhostCipher`) и HKDF |
-| `ghost-reality` | Логика Reality-сервера, TLS-инкапсуляция и валидация JA4-fingerprints |
-| `ghost-tun` | Userspace-реализация `tun2socks` (TUN fd → парсинг IP/TCP → SOCKS5) для мобильного VPN |
-| `ghost-client` | SOCKS5-инбаунд (исполняемый файл) |
-| `ghost-server` | Серверный демон (исполняемый файл) |
-| `ghost_flutter` | Исходники Android-приложения |
+| `ghost-common` | Protocol types, framing (`GhostFrame`), addressing, and stealth primitives (padding, fragmentation) |
+| `ghost-crypto` | ChaCha20-Poly1305 wrapper (`GhostCipher`) and HKDF |
+| `ghost-reality` | Reality server logic, TLS encapsulation, and JA4 fingerprint validation |
+| `ghost-tun` | Userspace `tun2socks` (TUN fd → IP/TCP parsing → SOCKS5) for the mobile VPN |
+| `ghost-client` | SOCKS5 inbound (binary) |
+| `ghost-server` | Server daemon (binary) |
+| `ghost_flutter` | Android app source |
 
 ```mermaid
 flowchart LR
-    App["Приложение / Браузер"] -->|SOCKS5| Client["ghost-client\n(SOCKS5 inbound)"]
-    Client -->|"TLS (SNI=mask_domain)\n+ Ghost-фреймы"| Net(("Сеть / DPI"))
-    Net --> Server["ghost-server\n(Reality + расшифровка)"]
-    Server -->|copy_bidirectional| Target["Целевой сайт"]
-    Net -. "активный скан" .-> Server
+    App["App / Browser"] -->|SOCKS5| Client["ghost-client\n(SOCKS5 inbound)"]
+    Client -->|"TLS (SNI=mask_domain)\n+ Ghost frames"| Net(("Network / DPI"))
+    Net --> Server["ghost-server\n(Reality + decrypt)"]
+    Server -->|copy_bidirectional| Target["Target site"]
+    Net -. "active probe" .-> Server
     Server -. "301 → mask_domain" .-> Net
 
     subgraph Mobile["Android"]
@@ -57,9 +57,9 @@ flowchart LR
     end
 ```
 
-## Формат протокола
+## Protocol Format
 
-### Структура фрейма (до шифрования)
+### Frame structure (plaintext)
 
 ```
 +---------+-----------+-----------------+-------------+-----------+--------------+----------+
@@ -68,47 +68,47 @@ flowchart LR
 +---------+-----------+-----------------+-------------+-----------+--------------+----------+
 ```
 
-`AddrType`: `0x01` IPv4 · `0x03` Domain · `0x04` IPv6 · `0x00` None (data-only фрейм, адрес уже известен серверу).
+`AddrType`: `0x01` IPv4 · `0x03` Domain · `0x04` IPv6 · `0x00` None (data-only frame; address is already known to the server).
 
-После init-фрейма адрес не дублируется — последующие пакеты в сессии несут только payload.
+After the init frame, the address is not repeated — subsequent packets in a session carry only the payload.
 
-### На проводе (зашифрованный фрейм)
+### On the wire (encrypted frame)
 
 ```
 [ FrameLen : 2B BE ][ Nonce : 12B ][ Ciphertext + Tag : N+16B ]
 ```
 
-### Этапы соединения
+### Connection flow
 
-1. Клиент инициирует TCP-соединение и выполняет TLS-хендшейк с `SNI = mask_domain`.
-2. Внутри TLS-сессии клиент передаёт auth-токен. Если проверка провалена (пришёл сканер цензора), сервер прикидывается обычным веб-сервером и отдаёт `301 Redirect` на `mask_domain`.
-3. При успешной авторизации клиент отправляет UserID и зашифрованный init-фрейм с целевым адресом.
-4. Устанавливается двунаправленный обмен (`copy_bidirectional`).
+1. The client establishes a TCP connection and performs a TLS handshake with `SNI = mask_domain`.
+2. Inside the TLS session, the client sends an auth token. If validation fails (e.g. a censorship scanner), the server falls back to behaving like a normal web server and returns a `301 Redirect` to `mask_domain`.
+3. On successful authentication, the client sends the UserID and an encrypted init frame containing the target address.
+4. Bidirectional data exchange begins (`copy_bidirectional`).
 
-## Сборка и запуск
+## Build & Run
 
-Для сборки требуется Rust (stable, 2021 edition).
+Requires Rust (stable, 2021 edition).
 
 ```bash
-# Компиляция воркспейса в релиз
+# Build the workspace in release mode
 cargo build --release
 
-# Запуск тестов
+# Run tests
 cargo test
 ```
 
-### Быстрый старт — сервер
+### Quick start — server
 
 ```bash
 sudo cp target/release/ghost-server /usr/local/bin/
 sudo cp deploy/ghost.sh /usr/local/bin/ghost && sudo chmod +x /usr/local/bin/ghost
 
-sudo ghost setup     # Интерактивная настройка, генерация UUID и systemd-юнита
-sudo ghost status    # Проверка статуса и чтение логов
-sudo ghost key       # Сгенерировать новый UUID для клиента
+sudo ghost setup     # Interactive setup: generates a UUID and a systemd unit
+sudo ghost status    # Check status and read logs
+sudo ghost key       # Generate a new UUID for a client
 ```
 
-Пример конфига (`/etc/ghost/ghost-server.conf`):
+Example config (`/etc/ghost/ghost-server.conf`):
 
 ```toml
 listen_addr      = "0.0.0.0:443"
@@ -122,9 +122,9 @@ verify_ja4       = false
 allowed_ja4      = []
 ```
 
-### Запуск клиента
+### Running the client
 
-Клиент по умолчанию поднимает локальный SOCKS5 на `127.0.0.1:10808`.
+The client listens for SOCKS5 connections on `127.0.0.1:10808` by default.
 
 ```toml
 socks5_listen        = "127.0.0.1:10808"
@@ -133,19 +133,19 @@ user_id              = "00000000000000000000000000000001"
 enable_padding       = true
 enable_fragmentation = false
 max_padding_len      = 64
-mask_domain          = "www.apple.com"   # "none" для отключения TLS
-reality_auth_key     = "<тот же ключ, что на сервере>"
+mask_domain          = "www.apple.com"   # set to "none" to disable TLS
+reality_auth_key     = "<same key as on the server>"
 ```
 
-## Известные ограничения
+## Known Limitations
 
-Текущий статус проекта — рабочий прототип; есть ряд компромиссов:
+The project is a working prototype; some trade-offs remain:
 
-- **Упрощённый auth-токен:** Авторизация использует статический `hex(auth_key)`, что теоретически уязвимо к replay-атакам. В планах — переход на динамический HMAC (timestamp + client_random).
-- **Хардкод секретов:** Pre-shared secret для генерации ключей (`ghost_default_key!`) пока зашит в код; нужно выносить в конфиг.
-- **Частичный JA4-spoofing:** Сервер умеет валидировать отпечатки, но сам клиент полагается на стандартный `rustls`, из-за чего реальный ClientHello пока не на 100% совпадает с оригинальным Chrome.
-- **Только TCP:** В модуле `ghost-tun` (tun2socks) на данный момент отсутствует обработка UDP (нет реализации UDP-ASSOCIATE).
+- **Simplified auth token:** Authentication currently uses a static `hex(auth_key)`, which is theoretically vulnerable to replay attacks. The plan is to move to a dynamic HMAC (timestamp + client_random).
+- **Hardcoded secret:** The pre-shared secret used for key derivation (`ghost_default_key!`) is currently baked into the code and needs to be moved to config.
+- **Partial JA4 spoofing:** The server can validate fingerprints, but the client relies on stock `rustls`, so the actual ClientHello does not yet fully match a real Chrome fingerprint.
+- **TCP only:** The `ghost-tun` module (tun2socks) currently has no UDP support (UDP-ASSOCIATE is not implemented).
 
-## Лицензия
+## License
 
-Проект распространяется под лицензией MIT — см. [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
